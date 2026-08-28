@@ -8,11 +8,14 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const { getCategory, listPlans, getPlan, purchasePlan } = require('../utils/shop');
+const { getBalance } = require('../utils/wallet');
 const { baseEmbed } = require('../utils/brand');
+const topupCommand = require('../commands/topup');
 
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction) {
+    try {
     // ---------- Autocomplete (แนะนำตัวเลือกให้แตะแทนพิมพ์เอง) ----------
     if (interaction.isAutocomplete()) {
       const command = interaction.client.commands.get(interaction.commandName);
@@ -92,6 +95,38 @@ module.exports = {
         embed.setFooter({ text: 'แสดง 25 แพ็กเกจแรก กรุณาติดต่อแอดมินหากไม่พบแพ็กเกจที่ต้องการ' });
       }
       return interaction.reply({ embeds: [embed], components: rows, ephemeral: true });
+    }
+
+    // ---------- Account buttons ----------
+    if (interaction.isButton() && interaction.customId === 'open_topup') {
+      const modal = new ModalBuilder()
+        .setCustomId('topup_modal')
+        .setTitle('เติมเงิน TrueMoney');
+      const voucherInput = new TextInputBuilder()
+        .setCustomId('voucher_link')
+        .setLabel('ลิงก์ซอง TrueMoney')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('วางลิงก์ซองอั่งเปาที่นี่')
+        .setMaxLength(250)
+        .setRequired(true);
+      modal.addComponents(new ActionRowBuilder().addComponents(voucherInput));
+      return interaction.showModal(modal);
+    }
+
+    if (interaction.isButton() && interaction.customId === 'check_balance') {
+      const balance = getBalance(interaction.user.id);
+      const embed = baseEmbed()
+        .setTitle('💎 ยอดเครดิตคงเหลือ')
+        .setDescription(
+          `บัญชีของ <@${interaction.user.id}>\n\n**${balance.toLocaleString()} บาท**`
+        );
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // ---------- Top-up modal ----------
+    if (interaction.isModalSubmit() && interaction.customId === 'topup_modal') {
+      const raw = interaction.fields.getTextInputValue('voucher_link');
+      return topupCommand.processTopup(interaction, raw);
     }
 
     // ---------- Plan button -> opens quantity modal ----------
@@ -181,6 +216,21 @@ module.exports = {
             `รวม **${totalPrice} บาท**`
           ).catch((err) => console.error('ส่ง log การซื้อไม่สำเร็จ:', err));
         }
+      }
+    }
+    } catch (err) {
+      console.error('Interaction error:', err);
+      const payload = { content: '❌ เกิดข้อผิดพลาดขณะทำงาน กรุณาลองใหม่', ephemeral: true };
+      try {
+        if (interaction.deferred && !interaction.replied) {
+          await interaction.editReply(payload);
+        } else if (!interaction.replied && interaction.isRepliable()) {
+          await interaction.reply(payload);
+        } else if (interaction.replied) {
+          await interaction.followUp(payload);
+        }
+      } catch (replyError) {
+        console.error('ไม่สามารถตอบกลับ interaction ได้:', replyError);
       }
     }
   },

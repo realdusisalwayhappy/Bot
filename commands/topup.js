@@ -1,10 +1,8 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { extractVoucherCode, redeemVoucher, isVoucherAlreadyUsed, markVoucherUsed } = require('../utils/truemoney');
-const { addBalance, getBalance } = require('../utils/wallet');
+const { extractVoucherCode, redeemVoucher, isVoucherAlreadyUsed, creditVoucher } = require('../utils/truemoney');
 const { baseEmbed } = require('../utils/brand');
 
-module.exports = {
-  data: new SlashCommandBuilder()
+const data = new SlashCommandBuilder()
     .setName('เติมเงิน')
     .setDescription('เติมเงินเข้าบัญชีด้วยซองอั่งเปา TrueMoney Wallet')
     .addStringOption((opt) =>
@@ -12,9 +10,9 @@ module.exports = {
         .setName('ลิงก์ซอง')
         .setDescription('วางลิงก์ซองอั่งเปา TrueMoney ของคุณ')
         .setRequired(true)
-    ),
+    );
 
-  async execute(interaction) {
+async function processTopup(interaction, raw) {
     const phone = process.env.TRUEMONEY_PHONE;
     if (!phone) {
       return interaction.reply({
@@ -23,7 +21,6 @@ module.exports = {
       });
     }
 
-    const raw = interaction.options.getString('ลิงก์ซอง');
     const code = extractVoucherCode(raw);
 
     if (!code) {
@@ -48,8 +45,21 @@ module.exports = {
       return interaction.editReply(`❌ เติมเงินไม่สำเร็จ: ${result.reason}`);
     }
 
-    markVoucherUsed(code, interaction.user.id, result.amount);
-    const newBalance = addBalance(interaction.user.id, result.amount, 'topup', `voucher:${code}`);
+    if (!Number.isSafeInteger(result.amount) || result.amount <= 0) {
+      return interaction.editReply('❌ ระบบได้รับจำนวนเงินจาก TrueMoney ไม่ถูกต้อง กรุณาติดต่อแอดมิน');
+    }
+
+    let newBalance;
+    try {
+      // UNIQUE(voucher_code) เป็นด่านสุดท้ายกันการเติมซ้ำจากคำขอพร้อมกัน
+      newBalance = creditVoucher(code, interaction.user.id, result.amount);
+    } catch (err) {
+      if (isVoucherAlreadyUsed(code)) {
+        return interaction.editReply('❌ ซองนี้ถูกใช้ไปแล้ว ไม่สามารถเติมเงินซ้ำได้');
+      }
+      console.error('บันทึกยอดเติมเงินไม่สำเร็จ:', err);
+      return interaction.editReply('❌ ระบบบันทึกยอดเงินไม่สำเร็จ กรุณาติดต่อแอดมินพร้อมแจ้งเวลาทำรายการ');
+    }
 
     const embed = baseEmbed()
       .setTitle('✅ เติมเงินสำเร็จ')
@@ -64,8 +74,16 @@ module.exports = {
     if (logChannelId) {
       const ch = interaction.client.channels.cache.get(logChannelId);
       if (ch) {
-        ch.send(`💰 <@${interaction.user.id}> เติมเงิน **${result.amount} บาท** ผ่านซอง TrueMoney`);
+        ch.send(`💰 <@${interaction.user.id}> เติมเงิน **${result.amount} บาท** ผ่านซอง TrueMoney`)
+          .catch((err) => console.error('ส่ง log การเติมเงินไม่สำเร็จ:', err));
       }
     }
+}
+
+module.exports = {
+  data,
+  execute(interaction) {
+    return processTopup(interaction, interaction.options.getString('ลิงก์ซอง'));
   },
+  processTopup,
 };

@@ -10,7 +10,10 @@ async function autoDeployCommands(client) {
       : Routes.applicationCommands(process.env.CLIENT_ID);
 
     await rest.put(route, { body: commands });
-    console.log(`✅ ลงทะเบียน ${commands.length} คำสั่งสำเร็จ (auto-deploy on startup)`);
+    console.log(
+      `✅ ลงทะเบียน ${commands.length} คำสั่งสำเร็จ ` +
+      `(${process.env.GUILD_ID ? 'เซิร์ฟเวอร์ ใช้งานได้ทันที' : 'global อาจใช้เวลาสักพัก'})`
+    );
   } catch (err) {
     console.error('❌ ลงทะเบียนคำสั่งไม่สำเร็จ:', err);
   }

@@ -3,6 +3,7 @@ const path = require('path');
 
 const db = new Database(path.join(__dirname, 'shop.sqlite'));
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // ---------- Schema ----------
 db.exec(`
