@@ -57,4 +57,27 @@ function markVoucherUsed(voucherCode, userId, amount) {
   ).run(voucherCode, userId, amount);
 }
 
-module.exports = { extractVoucherCode, redeemVoucher, isVoucherAlreadyUsed, markVoucherUsed };
+// บันทึกซอง + เติมยอดใน transaction เดียวกัน
+// ถ้าขั้นตอนใดล้มเหลว จะ rollback ทั้งหมด ไม่ทิ้งรายการเติมเงินค้างครึ่งทาง
+function creditVoucher(voucherCode, userId, amount) {
+  const tx = db.transaction(() => {
+    db.prepare(
+      'INSERT INTO redeemed_vouchers (voucher_code, user_id, amount) VALUES (?, ?, ?)'
+    ).run(voucherCode, userId, amount);
+    db.prepare('INSERT OR IGNORE INTO balances (user_id, balance) VALUES (?, 0)').run(userId);
+    db.prepare('UPDATE balances SET balance = balance + ? WHERE user_id = ?').run(amount, userId);
+    db.prepare(
+      'INSERT INTO transactions (user_id, type, amount, detail) VALUES (?, ?, ?, ?)'
+    ).run(userId, 'topup', amount, `voucher:${voucherCode}`);
+    return db.prepare('SELECT balance FROM balances WHERE user_id = ?').get(userId).balance;
+  });
+  return tx();
+}
+
+module.exports = {
+  extractVoucherCode,
+  redeemVoucher,
+  isVoucherAlreadyUsed,
+  markVoucherUsed,
+  creditVoucher,
+};

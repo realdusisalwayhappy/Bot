@@ -17,6 +17,12 @@ function getCategory(idOrName) {
 }
 
 function addCategory(name, emoji = '📦', description = '') {
+  name = String(name || '').trim();
+  emoji = String(emoji || '📦').trim();
+  description = String(description || '').trim();
+  if (!name || name.length > 80) throw new Error('invalid_category_name');
+  if (emoji.length > 32) throw new Error('invalid_category_emoji');
+  if (description.length > 1000) throw new Error('invalid_category_description');
   return db.prepare(
     'INSERT INTO categories (name, emoji, description) VALUES (?, ?, ?)'
   ).run(name, emoji, description);
@@ -47,6 +53,15 @@ function getPlanByLabel(categoryId, label) {
 }
 
 function addPlan(categoryId, label, price, sortOrder = 0) {
+  label = String(label || '').trim();
+  if (!Number.isSafeInteger(price) || price < 1 || price > 1000000) {
+    throw new Error('invalid_plan_price');
+  }
+  if (!label || label.length > 80) throw new Error('invalid_plan_label');
+  if (!Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 100000) {
+    throw new Error('invalid_plan_order');
+  }
+  if (getPlanByLabel(categoryId, label)) throw new Error('duplicate_plan');
   return db.prepare(
     'INSERT INTO plans (category_id, label, price, sort_order) VALUES (?, ?, ?, ?)'
   ).run(categoryId, label, price, sortOrder);
@@ -60,6 +75,13 @@ function stockCount(planId) {
 }
 
 function addStockLines(planId, lines) {
+  if (!Number.isInteger(planId) || !getPlan(planId)) throw new Error('invalid_plan');
+  if (!Array.isArray(lines) || lines.length === 0 || lines.length > 10000) {
+    throw new Error('invalid_stock_batch');
+  }
+  if (lines.some((line) => typeof line !== 'string' || !line.trim() || line.length > 1000)) {
+    throw new Error('invalid_stock_line');
+  }
   const insert = db.prepare('INSERT INTO stock (plan_id, content) VALUES (?, ?)');
   const insertMany = db.transaction((items) => {
     for (const line of items) insert.run(planId, line);
@@ -83,6 +105,65 @@ function claimOneStockItem(planId, userId) {
   return tx();
 }
 
+// ซื้อสินค้าแบบ atomic: ตรวจสต็อก + ตรวจยอดเงิน + หักเงิน + ตัดสต็อก
+// อยู่ใน SQLite transaction เดียวกัน ป้องกันเงินถูกหักแต่ไม่ได้สินค้าเมื่อบอทล้มกลางทาง
+function purchasePlan(planId, userId, quantity) {
+  if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1000) {
+    return { ok: false, reason: 'invalid_quantity' };
+  }
+
+  const tx = db.transaction(() => {
+    const plan = getPlan(planId);
+    if (!plan) return { ok: false, reason: 'plan_not_found' };
+    if (!Number.isSafeInteger(plan.price) || plan.price < 1) {
+      return { ok: false, reason: 'invalid_plan_price' };
+    }
+
+    const items = db.prepare(
+      'SELECT * FROM stock WHERE plan_id = ? AND sold = 0 ORDER BY id ASC LIMIT ?'
+    ).all(planId, quantity);
+    if (items.length < quantity) {
+      return { ok: false, reason: 'out_of_stock', available: items.length };
+    }
+    const deliveryText = items.map((item, index) => `\`${index + 1}.\` ${item.content}`).join('\n');
+    if (deliveryText.length > 3800) {
+      return { ok: false, reason: 'delivery_too_large' };
+    }
+
+    db.prepare('INSERT OR IGNORE INTO balances (user_id, balance) VALUES (?, 0)').run(userId);
+    const balance = db.prepare('SELECT balance FROM balances WHERE user_id = ?').get(userId).balance;
+    const totalPrice = plan.price * quantity;
+    if (!Number.isSafeInteger(totalPrice) || balance < totalPrice) {
+      return { ok: false, reason: 'insufficient_balance', balance, totalPrice };
+    }
+
+    db.prepare('UPDATE balances SET balance = balance - ? WHERE user_id = ?')
+      .run(totalPrice, userId);
+    db.prepare(
+      'INSERT INTO transactions (user_id, type, amount, detail) VALUES (?, ?, ?, ?)'
+    ).run(userId, 'purchase', -totalPrice, `buy:${plan.category_name} - ${plan.label} x${quantity}`);
+
+    const markSold = db.prepare(
+      `UPDATE stock SET sold = 1, sold_to = ?, sold_at = datetime('now','localtime')
+       WHERE id = ? AND sold = 0`
+    );
+    for (const item of items) {
+      const result = markSold.run(userId, item.id);
+      if (result.changes !== 1) throw new Error('stock_claim_failed');
+    }
+
+    return {
+      ok: true,
+      plan,
+      items,
+      totalPrice,
+      balance: balance - totalPrice,
+    };
+  });
+
+  return tx();
+}
+
 module.exports = {
   listCategories,
   getCategory,
@@ -94,4 +175,5 @@ module.exports = {
   stockCount,
   addStockLines,
   claimOneStockItem,
+  purchasePlan,
 };

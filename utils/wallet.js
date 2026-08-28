@@ -10,6 +10,9 @@ function ensureAccount(userId) {
 }
 
 function addBalance(userId, amount, type, detail = '') {
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error('invalid_balance_amount');
+  }
   const tx = db.transaction(() => {
     ensureAccount(userId);
     db.prepare('UPDATE balances SET balance = balance + ? WHERE user_id = ?').run(amount, userId);
@@ -23,6 +26,9 @@ function addBalance(userId, amount, type, detail = '') {
 
 // หักเงิน — คืน false ถ้ายอดไม่พอ (กัน race condition ด้วย transaction)
 function deductBalance(userId, amount, detail = '') {
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return false;
+  }
   const tx = db.transaction(() => {
     ensureAccount(userId);
     const current = getBalance(userId);
