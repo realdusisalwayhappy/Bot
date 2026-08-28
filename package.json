@@ -1,0 +1,17 @@
+{
+  "name": "dustybun-store-bot",
+  "version": "1.0.0",
+  "description": "Dustybun.Store - Discord Auto Buy Shop Bot (ขายแอพพรีเมียม)",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "axios": "^1.7.2"
+  }
+}
