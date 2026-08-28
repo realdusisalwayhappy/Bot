@@ -10,18 +10,26 @@ CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   emoji TEXT DEFAULT '📦',
-  price INTEGER NOT NULL,          -- ราคาต่อชิ้น (บาท)
   description TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL,
+  label TEXT NOT NULL,             -- เช่น "1 วัน", "7 วัน", "30 วัน"
+  price INTEGER NOT NULL,          -- ราคาต่อชิ้นของแพ็กเกจนี้ (บาท)
+  sort_order INTEGER DEFAULT 0,
+  FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 
 CREATE TABLE IF NOT EXISTS stock (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL,
+  plan_id INTEGER NOT NULL,
   content TEXT NOT NULL,           -- ข้อมูลสินค้า 1 ชิ้น (เช่น user:pass หรือ key)
   sold INTEGER DEFAULT 0,
   sold_to TEXT,
   sold_at TEXT,
-  FOREIGN KEY (category_id) REFERENCES categories(id)
+  FOREIGN KEY (plan_id) REFERENCES plans(id)
 );
 
 CREATE TABLE IF NOT EXISTS balances (

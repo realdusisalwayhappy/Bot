@@ -5,9 +5,8 @@ const { baseEmbed } = require('../utils/brand');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('addcategory')
-    .setDescription('[แอดมิน] เพิ่มหมวดหมู่สินค้าใหม่')
-    .addStringOption((o) => o.setName('name').setDescription('ชื่อหมวดหมู่ เช่น Netflix Premium').setRequired(true))
-    .addIntegerOption((o) => o.setName('price').setDescription('ราคาต่อชิ้น (บาท)').setRequired(true))
+    .setDescription('[แอดมิน] เพิ่มหมวดหมู่สินค้าใหม่ (เช่น Netflix, Youtube Premium)')
+    .addStringOption((o) => o.setName('name').setDescription('ชื่อหมวดหมู่ เช่น Netflix').setRequired(true))
     .addStringOption((o) => o.setName('emoji').setDescription('อีโมจิของหมวดหมู่ เช่น 🎬').setRequired(false))
     .addStringOption((o) => o.setName('description').setDescription('รายละเอียดสินค้า').setRequired(false))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -19,19 +18,18 @@ module.exports = {
     }
 
     const name = interaction.options.getString('name');
-    const price = interaction.options.getInteger('price');
     const emoji = interaction.options.getString('emoji') || '📦';
     const description = interaction.options.getString('description') || '';
 
     try {
-      addCategory(name, price, emoji, description);
+      addCategory(name, emoji, description);
     } catch (err) {
       return interaction.reply({ content: `❌ เกิดข้อผิดพลาด: หมวดหมู่นี้อาจมีอยู่แล้ว`, ephemeral: true });
     }
 
     const embed = baseEmbed()
       .setTitle('✅ เพิ่มหมวดหมู่สำเร็จ')
-      .setDescription(`${emoji} **${name}**\nราคา: ${price} บาท`);
+      .setDescription(`${emoji} **${name}**\n\nต่อไปใช้ \`/addplan\` เพื่อเพิ่มแพ็กเกจราคา (เช่น 1 วัน, 7 วัน, 30 วัน) ให้หมวดหมู่นี้`);
 
     await interaction.reply({ embeds: [embed] });
   },

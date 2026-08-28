@@ -23,11 +23,11 @@ module.exports = {
 
     const embed = baseEmbed()
       .setTitle(`🛍️ ${BRAND.name} — เมนูสินค้า`)
-      .setDescription('เลือกหมวดหมู่จากเมนูด้านล่าง ระบบจะแสดงราคาและสต็อกคงเหลือให้ทันที')
+      .setDescription('เลือกหมวดหมู่จากเมนูด้านล่าง ระบบจะแสดงแพ็กเกจและราคาให้เลือกในหน้าถัดไป')
       .addFields(
         categories.map((c) => ({
           name: `${c.emoji} ${c.name}`,
-          value: `ราคา: **${c.price} บาท** • คงเหลือ: **${c.stock_left}** ชิ้น`,
+          value: `${c.plan_count} แพ็กเกจให้เลือก`,
           inline: true,
         }))
       );
@@ -38,7 +38,7 @@ module.exports = {
       .addOptions(
         categories.slice(0, 25).map((c) => ({
           label: c.name,
-          description: `${c.price} บาท • เหลือ ${c.stock_left} ชิ้น`,
+          description: `${c.plan_count} แพ็กเกจให้เลือก`,
           value: String(c.id),
           emoji: c.emoji || '📦',
         }))

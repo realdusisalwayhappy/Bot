@@ -7,8 +7,8 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { getCategory, stockCount, claimOneStockItem } = require('../utils/shop');
-const { getBalance, deductBalance } = require('../utils/wallet');
+const { getCategory, listPlans, getPlan, stockCount, claimOneStockItem } = require('../utils/shop');
+const { getBalance, deductBalance, addBalance } = require('../utils/wallet');
 const { baseEmbed } = require('../utils/brand');
 
 module.exports = {
@@ -32,7 +32,7 @@ module.exports = {
       return;
     }
 
-    // ---------- Category select menu ----------
+    // ---------- Category select menu -> show plans (แพ็กเกจตามจำนวนวัน) ----------
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_category') {
       const categoryId = interaction.values[0];
       const category = getCategory(Number(categoryId));
@@ -40,32 +40,50 @@ module.exports = {
         return interaction.reply({ content: '❌ ไม่พบหมวดหมู่นี้แล้ว', ephemeral: true });
       }
 
-      const left = stockCount(category.id);
+      const plans = listPlans(category.id);
+      if (plans.length === 0) {
+        return interaction.reply({
+          content: `⚠️ หมวดหมู่ **${category.name}** ยังไม่มีแพ็กเกจให้เลือก (แอดมินต้องเพิ่มด้วย /addplan)`,
+          ephemeral: true,
+        });
+      }
+
       const embed = baseEmbed()
         .setTitle(`${category.emoji} ${category.name}`)
-        .setDescription(category.description || 'ไม่มีรายละเอียดเพิ่มเติม')
+        .setDescription(category.description || 'เลือกแพ็กเกจที่ต้องการด้านล่าง')
         .addFields(
-          { name: '💵 ราคา', value: `${category.price} บาท / ชิ้น`, inline: true },
-          { name: '📦 คงเหลือ', value: `${left} ชิ้น`, inline: true }
+          plans.map((p) => ({
+            name: `${p.label}`,
+            value: `💵 ${p.price} บาท • 📦 เหลือ ${p.stock_left} ชิ้น`,
+            inline: true,
+          }))
         );
 
-      const buyButton = new ButtonBuilder()
-        .setCustomId(`buy_${category.id}`)
-        .setLabel('🛒 ซื้อสินค้า Auto')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(left === 0);
+      // Discord จำกัด 5 ปุ่มต่อแถว, 5 แถว = 25 ปุ่มสูงสุด
+      const rows = [];
+      for (let i = 0; i < plans.length; i += 5) {
+        const chunk = plans.slice(i, i + 5);
+        const row = new ActionRowBuilder().addComponents(
+          chunk.map((p) =>
+            new ButtonBuilder()
+              .setCustomId(`plan_${p.id}`)
+              .setLabel(`${p.label} • ${p.price}฿`)
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(p.stock_left === 0)
+          )
+        );
+        rows.push(row);
+      }
 
-      const row = new ActionRowBuilder().addComponents(buyButton);
-
-      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      return interaction.reply({ embeds: [embed], components: rows, ephemeral: true });
     }
 
-    // ---------- Buy button -> opens quantity modal ----------
-    if (interaction.isButton() && interaction.customId.startsWith('buy_')) {
-      const categoryId = interaction.customId.replace('buy_', '');
+    // ---------- Plan button -> opens quantity modal ----------
+    if (interaction.isButton() && interaction.customId.startsWith('plan_')) {
+      const planId = interaction.customId.replace('plan_', '');
 
       const modal = new ModalBuilder()
-        .setCustomId(`buy_modal_${categoryId}`)
+        .setCustomId(`buy_modal_${planId}`)
         .setTitle('ยืนยันการซื้อสินค้า');
 
       const qtyInput = new TextInputBuilder()
@@ -73,6 +91,7 @@ module.exports = {
         .setLabel('จำนวนที่ต้องการซื้อ')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('เช่น 1')
+        .setValue('1')
         .setRequired(true);
 
       modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
@@ -81,10 +100,10 @@ module.exports = {
 
     // ---------- Modal submit -> process purchase ----------
     if (interaction.isModalSubmit() && interaction.customId.startsWith('buy_modal_')) {
-      const categoryId = Number(interaction.customId.replace('buy_modal_', ''));
-      const category = getCategory(categoryId);
-      if (!category) {
-        return interaction.reply({ content: '❌ ไม่พบหมวดหมู่นี้แล้ว', ephemeral: true });
+      const planId = Number(interaction.customId.replace('buy_modal_', ''));
+      const plan = getPlan(planId);
+      if (!plan) {
+        return interaction.reply({ content: '❌ ไม่พบแพ็กเกจนี้แล้ว', ephemeral: true });
       }
 
       const qtyRaw = interaction.fields.getTextInputValue('quantity');
@@ -94,7 +113,7 @@ module.exports = {
         return interaction.reply({ content: '❌ กรุณาใส่จำนวนเป็นตัวเลขที่มากกว่า 0', ephemeral: true });
       }
 
-      const available = stockCount(category.id);
+      const available = stockCount(plan.id);
       if (quantity > available) {
         return interaction.reply({
           content: `❌ สต็อกไม่พอ (คงเหลือ ${available} ชิ้น)`,
@@ -102,7 +121,7 @@ module.exports = {
         });
       }
 
-      const totalPrice = category.price * quantity;
+      const totalPrice = plan.price * quantity;
       const balance = getBalance(interaction.user.id);
       if (balance < totalPrice) {
         return interaction.reply({
@@ -114,22 +133,22 @@ module.exports = {
       await interaction.deferReply({ ephemeral: true });
 
       // หักเงินก่อน (atomic) แล้วค่อยเคลม stock ทีละชิ้น กันแย่งกันซื้อ
-      const deducted = deductBalance(interaction.user.id, totalPrice, `buy:${category.name} x${quantity}`);
+      const productLabel = `${plan.category_name} - ${plan.label}`;
+      const deducted = deductBalance(interaction.user.id, totalPrice, `buy:${productLabel} x${quantity}`);
       if (!deducted) {
         return interaction.editReply('❌ ยอดเงินไม่พอ (มีการเปลี่ยนแปลงระหว่างทำรายการ)');
       }
 
       const claimedItems = [];
       for (let i = 0; i < quantity; i++) {
-        const item = claimOneStockItem(category.id, interaction.user.id);
+        const item = claimOneStockItem(plan.id, interaction.user.id);
         if (item) claimedItems.push(item);
       }
 
       // ถ้าเคลมได้ไม่ครบ (สต็อกหมดกลางทาง) คืนเงินส่วนที่ขาด
       if (claimedItems.length < quantity) {
         const shortfall = quantity - claimedItems.length;
-        const refund = shortfall * category.price;
-        const { addBalance } = require('../utils/wallet');
+        const refund = shortfall * plan.price;
         addBalance(interaction.user.id, refund, 'topup', 'refund:out_of_stock');
       }
 
@@ -140,9 +159,9 @@ module.exports = {
       const deliveryText = claimedItems.map((it, idx) => `\`${idx + 1}.\` ${it.content}`).join('\n');
 
       const dmEmbed = baseEmbed()
-        .setTitle(`✅ ขอบคุณที่อุดหนุน ${category.emoji} ${category.name}`)
+        .setTitle(`✅ ขอบคุณที่อุดหนุน ${plan.category_emoji} ${productLabel}`)
         .setDescription(`นี่คือสินค้าของคุณ (${claimedItems.length} ชิ้น):\n\n${deliveryText}`)
-        .addFields({ name: 'ยอดที่ชำระ', value: `${claimedItems.length * category.price} บาท` });
+        .addFields({ name: 'ยอดที่ชำระ', value: `${claimedItems.length * plan.price} บาท` });
 
       try {
         await interaction.user.send({ embeds: [dmEmbed] });
@@ -163,8 +182,8 @@ module.exports = {
         const ch = interaction.client.channels.cache.get(logChannelId);
         if (ch) {
           ch.send(
-            `🛒 <@${interaction.user.id}> ซื้อ **${category.name}** x${claimedItems.length} ` +
-            `รวม **${claimedItems.length * category.price} บาท**`
+            `🛒 <@${interaction.user.id}> ซื้อ **${productLabel}** x${claimedItems.length} ` +
+            `รวม **${claimedItems.length * plan.price} บาท**`
           );
         }
       }
