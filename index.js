@@ -27,15 +27,4 @@ for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith('.js'))) 
   }
 }
 
-client.on('error', (err) => console.error('Discord client error:', err));
-client.on('shardError', (err) => console.error('Discord gateway error:', err));
-
-if (!process.env.DISCORD_TOKEN) {
-  console.error('❌ ไม่พบ DISCORD_TOKEN ในไฟล์ .env');
-  process.exit(1);
-}
-
-client.login(process.env.DISCORD_TOKEN).catch((err) => {
-  console.error('❌ เข้าสู่ระบบ Discord ไม่สำเร็จ:', err.message);
-  process.exit(1);
-});
+client.login(process.env.DISCORD_TOKEN);

@@ -8,8 +8,6 @@
 
 ## 1. ติดตั้ง
 
-แนะนำให้ใช้ **Node.js 20.x** เนื่องจาก SQLite เป็น native module:
-
 ```bash
 npm install
 ```
@@ -61,8 +59,6 @@ npm start
 
 > จำกัดสิทธิ์แอดมินด้วย `ADMIN_ROLE_ID` ใน `.env` หรือใครก็ตามที่มีสิทธิ์ Administrator ในเซิร์ฟเวอร์
 
-ถ้ากำหนด `ADMIN_ROLE_ID` แล้ว สมาชิกที่มี Role นี้จะใช้คำสั่งแอดมินได้โดยไม่ต้องมีสิทธิ์ Administrator
-
 ## โครงสร้างไฟล์
 
 ```
@@ -74,7 +70,6 @@ dustybun-bot/
 │   ├── balance.js         # /เช็คเงิน
 │   ├── topup.js           # /เติมเงิน
 │   ├── addcategory.js     # /addcategory (แอดมิน)
-│   ├── addplan.js         # /addplan (แอดมิน)
 │   └── addstock.js        # /addstock (แอดมิน)
 ├── events/
 │   ├── ready.js
@@ -94,5 +89,3 @@ dustybun-bot/
 - ถ้าสต็อกหมดพอดีระหว่างทำรายการ ระบบคืนเงินส่วนที่ขาดให้อัตโนมัติ
 - ทุกซองอั่งเปาที่ redeem แล้วจะถูกบันทึกกันเติมซ้ำ (`redeemed_vouchers` table)
 - ไฟล์สต็อกสินค้า (username/password/key) เก็บใน `database/shop.sqlite` — **อย่า commit ไฟล์นี้ขึ้น public repo**, ใส่ใน `.gitignore`
-- การซื้อจะตรวจเงินและสต็อก แล้วบันทึกทั้งหมดใน SQLite transaction เดียวกัน
-- ราคาแพ็กเกจต้องเป็นจำนวนเต็มตั้งแต่ 1 บาท และจำกัดขนาดไฟล์/จำนวนสต็อกเพื่อไม่ให้เกินข้อจำกัดของ Discord

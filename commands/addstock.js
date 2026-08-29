@@ -1,117 +1,54 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const axios = require('axios');
-const { getCategory, getPlanByLabel, addStockLines, stockCount, listCategories, listPlans } = require('../utils/shop');
+const { SlashCommandBuilder, PermissionFlagsBits, StringSelectMenuBuilder, ActionRowBuilder } = require('discord.js');
+const { listCategories } = require('../utils/shop');
+const { createPending } = require('../utils/pendingUploads');
 const { baseEmbed } = require('../utils/brand');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('addstock')
-    .setDescription('[แอดมิน] เพิ่มสต็อกสินค้าให้แพ็กเกจ จากไฟล์ .txt (1 บรรทัด = 1 ชิ้น)')
-    .addStringOption((o) =>
-      o.setName('category').setDescription('เลือกหมวดหมู่ (พิมพ์แล้วแตะจากลิสต์)').setRequired(true).setAutocomplete(true)
-    )
-    .addStringOption((o) =>
-      o.setName('plan').setDescription('เลือกแพ็กเกจ (พิมพ์แล้วแตะจากลิสต์)').setRequired(true).setAutocomplete(true)
-    )
-    .addAttachmentOption((o) => o.setName('file').setDescription('ไฟล์ .txt รายการสินค้า บรรทัดละ 1 ชิ้น').setRequired(true)),
-
-  async autocomplete(interaction) {
-    const focused = interaction.options.getFocused(true);
-
-    if (focused.name === 'category') {
-      const categories = listCategories();
-      const filtered = categories
-        .filter((c) => c.name.toLowerCase().includes((focused.value || '').toLowerCase()))
-        .slice(0, 25);
-      return interaction.respond(filtered.map((c) => ({ name: `${c.emoji} ${c.name}`, value: c.name })));
-    }
-
-    if (focused.name === 'plan') {
-      const categoryName = interaction.options.getString('category');
-      const category = categoryName ? getCategory(categoryName) : null;
-      if (!category) return interaction.respond([]);
-      const plans = listPlans(category.id);
-      const filtered = plans
-        .filter((p) => p.label.toLowerCase().includes((focused.value || '').toLowerCase()))
-        .slice(0, 25);
-      return interaction.respond(
-        filtered.map((p) => ({ name: `${p.label} • ${p.price}฿ (เหลือ ${p.stock_left})`, value: p.label }))
-      );
-    }
-
-    return interaction.respond([]);
-  },
+    .setName('เพิ่มเข้าหมวดหมู่')
+    .setDescription('[แอดมิน] เพิ่มสต็อกสินค้า — แนบไฟล์แล้วเลือกหมวดหมู่/แพ็กเกจจากเมนู')
+    .addAttachmentOption((o) => o.setName('file').setDescription('ไฟล์ .txt รายการสินค้า บรรทัดละ 1 ชิ้น').setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const adminRoleId = process.env.ADMIN_ROLE_ID;
-    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
-      || (adminRoleId && interaction.member?.roles?.cache?.has(adminRoleId));
-    if (!isAdmin) {
+    if (adminRoleId && !interaction.member.roles.cache.has(adminRoleId) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ คุณไม่มีสิทธิ์ใช้คำสั่งนี้', ephemeral: true });
     }
 
-    const categoryName = interaction.options.getString('category');
-    const category = getCategory(categoryName);
-    if (!category) {
-      return interaction.reply({ content: `❌ ไม่พบหมวดหมู่ "${categoryName}"`, ephemeral: true });
+    const attachment = interaction.options.getAttachment('file');
+    if (!attachment.name.endsWith('.txt')) {
+      return interaction.reply({ content: '❌ กรุณาแนบไฟล์ .txt เท่านั้น', ephemeral: true });
     }
 
-    const planLabel = interaction.options.getString('plan');
-    const plan = getPlanByLabel(category.id, planLabel);
-    if (!plan) {
+    const categories = listCategories();
+    if (categories.length === 0) {
       return interaction.reply({
-        content: `❌ ไม่พบแพ็กเกจ "${planLabel}" ในหมวดหมู่ "${category.name}" กรุณาสร้างด้วย /addplan ก่อน`,
+        content: '⚠️ ยังไม่มีหมวดหมู่เลย กรุณาสร้างด้วย `/addcategory` ก่อน',
         ephemeral: true,
       });
     }
 
-    const attachment = interaction.options.getAttachment('file');
-    if (!attachment.name.toLowerCase().endsWith('.txt')) {
-      return interaction.reply({ content: '❌ กรุณาอัปโหลดไฟล์ .txt เท่านั้น', ephemeral: true });
-    }
-    if (attachment.size > 1_000_000) {
-      return interaction.reply({ content: '❌ ไฟล์ใหญ่เกินไป (สูงสุด 1 MB)', ephemeral: true });
-    }
-
-    await interaction.deferReply();
-
-    let lines;
-    try {
-      const res = await axios.get(attachment.url, {
-        responseType: 'text',
-        timeout: 15000,
-        maxContentLength: 1_000_000,
-        maxBodyLength: 1_000_000,
-      });
-      lines = res.data
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-    } catch (err) {
-      console.error('อ่านไฟล์สต็อกไม่สำเร็จ:', err);
-      return interaction.editReply('❌ อ่านไฟล์สต็อกไม่สำเร็จ กรุณาตรวจสอบไฟล์แล้วลองใหม่');
-    }
-
-    if (lines.length === 0) {
-      return interaction.editReply('❌ ไฟล์ว่างเปล่า ไม่มีสินค้าให้เพิ่ม');
-    }
-
-    try {
-      addStockLines(plan.id, lines);
-    } catch (err) {
-      return interaction.editReply('❌ เพิ่มสต็อกไม่สำเร็จ: ไฟล์ต้องมีไม่เกิน 10,000 บรรทัด และแต่ละบรรทัดไม่เกิน 1,000 ตัวอักษร');
-    }
-    const total = stockCount(plan.id);
+    const pendingId = createPending(interaction.user.id, attachment);
 
     const embed = baseEmbed()
-      .setTitle('✅ เพิ่มสต็อกสำเร็จ')
-      .setDescription(
-        `หมวดหมู่: **${category.emoji} ${category.name}**\n` +
-        `แพ็กเกจ: **${plan.label}** (${plan.price} บาท)\n` +
-        `เพิ่มไป: **${lines.length}** ชิ้น\n` +
-        `สต็อกคงเหลือทั้งหมด: **${total}** ชิ้น`
+      .setTitle('📦 เพิ่มสต็อกสินค้า')
+      .setDescription(`ไฟล์ที่แนบ: **${attachment.name}**\n\nเลือกหมวดหมู่ที่จะเพิ่มสต็อกนี้เข้าไป:`);
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`stock_category_${pendingId}`)
+      .setPlaceholder('📂 เลือกหมวดหมู่')
+      .addOptions(
+        categories.slice(0, 25).map((c) => ({
+          label: c.name,
+          description: `${c.plan_count} แพ็กเกจ`,
+          value: String(c.id),
+          emoji: c.emoji || '📦',
+        }))
       );
 
-    await interaction.editReply({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(select);
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
   },
 };

@@ -6,15 +6,14 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('addcategory')
     .setDescription('[แอดมิน] เพิ่มหมวดหมู่สินค้าใหม่ (เช่น Netflix, Youtube Premium)')
-    .addStringOption((o) => o.setName('name').setDescription('ชื่อหมวดหมู่ เช่น Netflix').setRequired(true).setMaxLength(80))
-    .addStringOption((o) => o.setName('emoji').setDescription('อีโมจิของหมวดหมู่ เช่น 🎬').setRequired(false).setMaxLength(32))
-    .addStringOption((o) => o.setName('description').setDescription('รายละเอียดสินค้า').setRequired(false).setMaxLength(1000)),
+    .addStringOption((o) => o.setName('name').setDescription('ชื่อหมวดหมู่ เช่น Netflix').setRequired(true))
+    .addStringOption((o) => o.setName('emoji').setDescription('อีโมจิของหมวดหมู่ เช่น 🎬').setRequired(false))
+    .addStringOption((o) => o.setName('description').setDescription('รายละเอียดสินค้า').setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const adminRoleId = process.env.ADMIN_ROLE_ID;
-    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
-      || (adminRoleId && interaction.member?.roles?.cache?.has(adminRoleId));
-    if (!isAdmin) {
+    if (adminRoleId && !interaction.member.roles.cache.has(adminRoleId) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ คุณไม่มีสิทธิ์ใช้คำสั่งนี้', ephemeral: true });
     }
 

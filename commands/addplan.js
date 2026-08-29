@@ -9,9 +9,10 @@ module.exports = {
     .addStringOption((o) =>
       o.setName('category').setDescription('เลือกหมวดหมู่ (พิมพ์แล้วแตะจากลิสต์)').setRequired(true).setAutocomplete(true)
     )
-    .addStringOption((o) => o.setName('label').setDescription('ชื่อแพ็กเกจ เช่น "1 วัน", "7 วัน", "30 วัน"').setRequired(true).setMaxLength(80))
-    .addIntegerOption((o) => o.setName('price').setDescription('ราคาต่อชิ้นของแพ็กเกจนี้ (บาท)').setRequired(true).setMinValue(1).setMaxValue(1000000))
-    .addIntegerOption((o) => o.setName('order').setDescription('ลำดับการแสดงผล (ตัวเลขน้อยแสดงก่อน)').setRequired(false).setMinValue(0).setMaxValue(100000)),
+    .addStringOption((o) => o.setName('label').setDescription('ชื่อแพ็กเกจ เช่น "1 วัน", "7 วัน", "30 วัน"').setRequired(true))
+    .addIntegerOption((o) => o.setName('price').setDescription('ราคาต่อชิ้นของแพ็กเกจนี้ (บาท)').setRequired(true))
+    .addIntegerOption((o) => o.setName('order').setDescription('ลำดับการแสดงผล (ตัวเลขน้อยแสดงก่อน)').setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused();
@@ -24,9 +25,7 @@ module.exports = {
 
   async execute(interaction) {
     const adminRoleId = process.env.ADMIN_ROLE_ID;
-    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
-      || (adminRoleId && interaction.member?.roles?.cache?.has(adminRoleId));
-    if (!isAdmin) {
+    if (adminRoleId && !interaction.member.roles.cache.has(adminRoleId) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ คุณไม่มีสิทธิ์ใช้คำสั่งนี้', ephemeral: true });
     }
 
@@ -40,14 +39,7 @@ module.exports = {
     const price = interaction.options.getInteger('price');
     const order = interaction.options.getInteger('order') || 0;
 
-    try {
-      addPlan(category.id, label, price, order);
-    } catch (err) {
-      const message = err.message === 'duplicate_plan'
-        ? '❌ แพ็กเกจชื่อนี้มีอยู่แล้วในหมวดหมู่นี้'
-        : '❌ ข้อมูลแพ็กเกจไม่ถูกต้อง กรุณาตรวจสอบชื่อ ราคา และลำดับการแสดงผล';
-      return interaction.reply({ content: message, ephemeral: true });
-    }
+    addPlan(category.id, label, price, order);
 
     const embed = baseEmbed()
       .setTitle('✅ เพิ่มแพ็กเกจสำเร็จ')
